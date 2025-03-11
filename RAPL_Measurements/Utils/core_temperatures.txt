@@ -1,0 +1,5 @@
+Core 0: 33.0°C
+Core 1: 30.0°C
+Core 2: 31.0°C
+Core 3: 30.0°C
+Average Temperature: 31.0°C
