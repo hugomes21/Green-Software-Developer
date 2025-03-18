@@ -4,13 +4,13 @@
 NTIMES=10
 
 # Define the number of seconds to wait for the CPU to cooldown
-COOLDOWN_SECONDS=3
+COOLDOWN_SECONDS=30
 
 # Define power limit values
-POWER_LIMITS=(-1)
+POWER_LIMITS=(2 12 20) # aqui os powercaps, aquilo que te dá o consumo de energia mais baixo
 
 # Define input sizes
-INPUT_SIZES=(10 100 1000)
+INPUT_SIZES=(40)
 
 # Compile sensors which will be used to calculate cool temperature
 cd RAPL
@@ -22,8 +22,8 @@ cd Utils/
 python3 temperatureUpdate.py $COOLDOWN_SECONDS
 
 # Update the number of times the program will run for each case
-for language in "../Languages"/*; do
-    for program in "$language"/*; do
+for language in "../Languages/C"; do
+    for program in "$language"/Fibonacci*; do
         if [ -d "$program" ]; then
             makefile_path="$program/Makefile"
             if [ -f "$makefile_path" ]; then
@@ -50,8 +50,8 @@ do
     cd ..
 
     # Iterate over programs
-    for language in "Languages"/*; do
-        for program in "$language"/*; do
+    for language in "Languages/C"; do
+        for program in "$language"/Fibonacci*; do
             if [ -d "$program" ]; then
                 makefile_path="$program/Makefile"
                 if [ -f "$makefile_path" ]; then
@@ -66,7 +66,7 @@ do
                         if [ -f "$file" ]; then
                             while IFS=, read -r line; do
                                 input_size=$(echo "$line" | cut -d',' -f2)  # Assuming input size is in the second column
-                                echo "${program##*/}_O0_$input_size, $line" >> ../../measurements.csv
+                                echo "${program##*/}_O0_${input_size}_cap${limit}, $line" >> ../../measurements.csv
                             done < <(tail -n +2 "$file")
                         fi
 
@@ -77,7 +77,7 @@ do
                         if [ -f "$file" ]; then
                             while IFS=, read -r line; do
                                 input_size=$(echo "$line" | cut -d',' -f2)  # Assuming input size is in the second column
-                                echo "${program##*/}_O2_$input_size, $line" >> ../../measurements.csv
+                                echo "${program##*/}_O2_${input_size}_cap${limit}, $line" >> ../../measurements.csv
                             done < <(tail -n +2 "$file")
                         fi
                     done
