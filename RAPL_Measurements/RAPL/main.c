@@ -15,8 +15,8 @@
 #include <sys/time.h>
 
 #define TEMPERATURETHRESHOLD 31.0
-#define VARIANCE 10
-#define WHATTSCAP -1
+#define VARIANCE 30
+#define WHATTSCAP 13
 #define MAX_STRING_LENGTH 500
 #define MAX_COMMAND_LENGTH 500
 #define MEASUREMENTS_FILE "measurements.csv"

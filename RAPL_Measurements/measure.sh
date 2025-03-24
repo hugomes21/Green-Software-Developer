@@ -7,10 +7,10 @@ NTIMES=10
 COOLDOWN_SECONDS=30
 
 # Define power limit values
-POWER_LIMITS=(2 12 20) # aqui os powercaps, aquilo que te dá o consumo de energia mais baixo
+POWER_LIMITS=(13) # aqui os powercaps, aquilo que te dá o consumo de energia mais baixo
 
 # Define input sizes
-INPUT_SIZES=(40)
+INPUT_SIZES=(10 30 40)
 
 # Compile sensors which will be used to calculate cool temperature
 cd RAPL
@@ -66,7 +66,7 @@ do
                         if [ -f "$file" ]; then
                             while IFS=, read -r line; do
                                 input_size=$(echo "$line" | cut -d',' -f2)  # Assuming input size is in the second column
-                                echo "${program##*/}_O0_${input_size}_cap${limit}, $line" >> ../../measurements.csv
+                                echo "${program##*/}_O0_${input_size}, $line" >> ../../measurements.csv
                             done < <(tail -n +2 "$file")
                         fi
 
@@ -77,7 +77,7 @@ do
                         if [ -f "$file" ]; then
                             while IFS=, read -r line; do
                                 input_size=$(echo "$line" | cut -d',' -f2)  # Assuming input size is in the second column
-                                echo "${program##*/}_O2_${input_size}_cap${limit}, $line" >> ../../measurements.csv
+                                echo "${program##*/}_O2_${input_size}, $line" >> ../../measurements.csv
                             done < <(tail -n +2 "$file")
                         fi
                     done

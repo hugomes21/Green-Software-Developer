@@ -2,6 +2,8 @@ import matplotlib.pyplot as plt
 import csv
 import os
 import numpy as np
+import subprocess
+import re
 
 def open_read_csv(file_path):
     with open(file_path, 'r') as file:
@@ -57,9 +59,9 @@ def plot_multiple_metrics(data, output_dir, title, metrics, ylabel):
     plt.savefig(f'{output_dir}/{title}_performance_metrics.png')
     plt.close()
 
-def collect_data_from_directories():
+def collect_data_from_directories(filename):
     all_data = {}
-    file_path = os.path.join(os.path.dirname(__file__), 'measurements.csv')
+    file_path = os.path.join(os.path.dirname(__file__), filename)
     if os.path.exists(file_path):
         data = open_read_csv(file_path)
         title = 'measurements'
@@ -81,6 +83,19 @@ def calculate_metrics(data, variable):
     powerup = (avg_non_optimized / avg_optimized) if avg_optimized != 0 else None
     
     return speedup, greenup, powerup
+
+# Função para calcular média e desvio-padrão
+def compute_avg_std(group, metric):
+    values, stds = [], []
+    for size in sorted(set(int(row['Program'].split('_')[-1]) for row in group)):
+        subset = [float(row[metric]) for row in group if int(row['Program'].split('_')[-1]) == size]
+        if subset:
+            values.append(np.mean(subset))
+            stds.append(np.std(subset))
+        else:
+            values.append(None)  # Caso não tenha dados para este input
+            stds.append(None)
+    return values, stds
 
 def plot_comparative_metrics(all_data, output_dir):
     metrics = ['Time (ms)', 'Package', 'Core(s)', 'Temperature', 'Memory']
@@ -114,19 +129,6 @@ def plot_comparative_metrics(all_data, output_dir):
                 if not non_optimized_data or not optimized_data:
                     print(f"Faltam dados para comparação de otimizações no algoritmo {algorithm} do tipo {data_type}!")
                     continue
-
-                # Função para calcular média e desvio-padrão
-                def compute_avg_std(group, metric):
-                    values, stds = [], []
-                    for size in sorted(set(int(row['Program'].split('_')[-1]) for row in group)):
-                        subset = [float(row[metric]) for row in group if int(row['Program'].split('_')[-1]) == size]
-                        if subset:
-                            values.append(np.mean(subset))
-                            stds.append(np.std(subset))
-                        else:
-                            values.append(None)  # Caso não tenha dados para este input
-                            stds.append(None)
-                    return values, stds
 
                 # O0 vs O2 (média e std)
                 values_O0, std_O0 = compute_avg_std(non_optimized_data, metric)
@@ -193,9 +195,192 @@ def plot_gps_up(data, output_dir):
             plt.savefig(f'{output_dir}/{program}_{metric}_gps_up_quadrant.png')
             plt.close()
 
+
+def plot_comparative_metrics_powercaps(all_data, output_dir, powercaps):
+    for powercap in powercaps:
+        # Filtrar os dados para as funções Fibonacci e PowerLimit == powercap
+        data = all_data['measurements']
+        fibonacci_data = [row for row in data if 'fibonacci' in row['Program'] and int(row['PowerLimit']) == powercap]
+
+        if not fibonacci_data:
+            print(f"No data found for PowerLimit = {powercap}")
+            continue
+
+        # Calcular energia consumida (Joules)
+        for row in fibonacci_data:
+            row['Energy (J)'] = float(row['Package']) * (float(row['Time (ms)']) / 1000)
+
+        # Agrupar por Program e Optimization
+        grouped_data = {}
+        for row in fibonacci_data:
+            program = row['Program'].split('_')[0]
+            optimization = 'O0' if '_O0_' in row['Program'] else 'O2'
+
+            if program not in grouped_data:
+                grouped_data[program] = {'O0': [], 'O2': []}
+
+            grouped_data[program][optimization].append(row)
+
+        # Calcular Speedup, Greenup e Powerup
+        results = []
+        for program, optimizations in grouped_data.items():
+            if optimizations['O0'] and optimizations['O2']:
+                # Calcular métricas usando a função calculate_metrics
+                speedup, _, _ = calculate_metrics(optimizations['O0'] + optimizations['O2'], 'Time (ms)')
+
+                # Calcular Greenup para energia
+                avg_energy_O0 = sum(float(row['Energy (J)']) for row in optimizations['O0']) / len(optimizations['O0'])
+                avg_energy_O2 = sum(float(row['Energy (J)']) for row in optimizations['O2']) / len(optimizations['O2'])
+                greenup = avg_energy_O0 / avg_energy_O2
+
+                # Calcular Powerup para potência
+                avg_power_O0 = sum(float(row['Package']) for row in optimizations['O0']) / len(optimizations['O0'])
+                avg_power_O2 = sum(float(row['Package']) for row in optimizations['O2']) / len(optimizations['O2'])
+                powerup = avg_power_O0 / avg_power_O2
+
+                results.append({
+                    'PowerLimit': powercap,
+                    'Program': program,
+                    'Speedup': speedup,
+                    'Greenup': greenup,
+                    'Powerup': powerup
+                })
+
+        # Imprimir os resultados
+        print(f"\nResults for PowerLimit = {powercap}:")
+        if not results:
+            print("No valid data for comparison.")
+        for result in results:
+            print(f"Program: {result['Program']}")
+            print(f"  Speedup: {result['Speedup']:.2f}")
+            print(f"  Greenup: {result['Greenup']:.2f}")
+            print(f"  Powerup: {result['Powerup']:.2f}")
+
+def plot_gps_up_powercaps(data, output_dir, powercaps):
+    programs = ['fibonacci_linear', 'fibonacci_recursive']
+    metrics = ['Time (ms)', 'Package', 'Core(s)']
+
+    for powercap in powercaps:
+        for program in programs:
+            for metric in metrics:
+                # Filtrar dados para o programa e PowerCap
+                non_optimized_data = [row for row in data if f'{program}_O0' in row['Program'] and int(row['PowerLimit']) == powercap]
+                optimized_data = [row for row in data if f'{program}_O2' in row['Program'] and int(row['PowerLimit']) == powercap]
+
+                if not non_optimized_data or not optimized_data:
+                    continue  # Ignorar se não houver dados suficientes
+
+                # Calcular Speedup, Greenup e Powerup
+                speedup, greenup, powerup = calculate_metrics(non_optimized_data + optimized_data, metric)
+
+                # Verificar se os valores são válidos
+                if speedup is None or greenup is None or powerup is None:
+                    continue
+
+                plt.figure(figsize=(10, 6))
+                plt.scatter(speedup, greenup, label=f'{program} - {metric}', marker='o')
+
+                # Aplicar escala logarítmica apenas se os valores forem positivos
+                if speedup > 0 and greenup > 0:
+                    plt.xscale('log')
+                    plt.yscale('log')
+
+                plt.xlabel('Speedup')
+                plt.ylabel('Greenup')
+                plt.title(f"GPS-UP Quadrant - {program} (PowerLimit = {powercap})")
+                plt.legend()
+                plt.grid(True)
+                plt.tight_layout()
+
+                # Criar diretório se não existir
+                os.makedirs(output_dir, exist_ok=True)
+
+                # Salvar gráfico
+                plt.savefig(f'{output_dir}/{program}_{metric}_gps_up_quadrant_powercap_{powercap}.png')
+                plt.close()
+
+
+def plot_energy_consumption(data, output_dir, title):
+    if not data:
+        print(f"No data found for {title}")
+        return
+
+    # Calcular energia consumida (Joules)
+    for row in data:
+        row['Energy (J)'] = float(row['Package']) * (float(row['Time (ms)']) / 1000)
+
+    # Filtrar dados para otimizações O0 e O2
+    non_optimized_data = [row for row in data if '_O0_' in row['Program']]
+    optimized_data = [row for row in data if '_O2_' in row['Program']]
+
+    if not non_optimized_data or not optimized_data:
+        print(f"Not enough data for energy consumption comparison in {title}")
+        return
+
+    # Calcular valores médios de energia
+    avg_energy_O0 = sum(float(row['Energy (J)']) for row in non_optimized_data) / len(non_optimized_data)
+    avg_energy_O2 = sum(float(row['Energy (J)']) for row in optimized_data) / len(optimized_data)
+
+    # Criar gráfico
+    plt.figure(figsize=(10, 6))
+    bars = plt.bar(['O0', 'O2'], [avg_energy_O0, avg_energy_O2], color=['blue', 'green'], edgecolor='black')
+
+    # Adicionar valores no topo das barras
+    for bar, value in zip(bars, [avg_energy_O0, avg_energy_O2]):
+        plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f'{value:.2f}', ha='center', va='bottom')
+
+    plt.xlabel('Optimization Level')
+    plt.ylabel('Energy Consumption (Joules)')
+    plt.title(f"Energy Consumption Comparison - {title}")
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    plt.tight_layout()
+
+    os.makedirs(output_dir, exist_ok=True)
+    plt.savefig(f'{output_dir}/{title}_energy_consumption.png')
+    plt.close()
+
+def plot_runtime(data, output_dir, title):
+    if not data:
+        print(f"No data found for {title}")
+        return
+
+    # Filtrar dados para otimizações O0 e O2
+    non_optimized_data = [row for row in data if '_O0_' in row['Program']]
+    optimized_data = [row for row in data if '_O2_' in row['Program']]
+
+    if not non_optimized_data or not optimized_data:
+        print(f"Not enough data for runtime comparison in {title}")
+        return
+
+    # Calcular valores médios de tempo de execução
+    avg_time_O0 = sum(float(row['Time (ms)']) for row in non_optimized_data) / len(non_optimized_data)
+    avg_time_O2 = sum(float(row['Time (ms)']) for row in optimized_data) / len(optimized_data)
+
+    # Criar gráfico
+    plt.figure(figsize=(10, 6))
+    bars = plt.bar(['O0', 'O2'], [avg_time_O0, avg_time_O2], color=['blue', 'green'], edgecolor='black')
+
+    # Adicionar valores no topo das barras
+    for bar, value in zip(bars, [avg_time_O0, avg_time_O2]):
+        plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f'{value:.2f}', ha='center', va='bottom')
+
+    plt.xlabel('Optimization Level')
+    plt.ylabel('Runtime (ms)')
+    plt.title(f"Runtime Comparison - {title}")
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    plt.tight_layout()
+
+    os.makedirs(output_dir, exist_ok=True)
+    plt.savefig(f'{output_dir}/{title}_runtime.png')
+    plt.close()
+
+
 if __name__ == "__main__":
     output_dir = os.path.join(os.getcwd(), 'Plots')
-    all_data = collect_data_from_directories()
+    all_data = open_read_csv("./CSV/measurements_ex6.csv")
+    #all_data = open_read_csv("./CSV/measurements_compare.csv")
+    #all_data = open_read_csv("./CSV/measurements_PowerCap.csv")
+    #all_data = collect_data_from_directories("measurements.csv")
     
     variables = {
         'Package': 'Energy Consumption (Joules)',
@@ -205,9 +390,25 @@ if __name__ == "__main__":
         'Memory': 'Memory (KBytes)'
     }
     
-    for title, data in all_data.items():
-        for variable, ylabel in variables.items():
-            plot_multiple_metrics(data, output_dir, title, [variable], ylabel)
+    #for title, data in all_data.items():
+    #for variable, ylabel in variables.items():
+        #plot_multiple_metrics(all_data, output_dir, "measurements", [variable], ylabel)
     
-    plot_comparative_metrics(all_data, output_dir)
-    plot_gps_up(all_data['measurements'], output_dir)
+    #plot_comparative_metrics(all_data, output_dir)
+    
+    # Exercício de PowerCap
+    #result = subprocess.run(["python3", "powercap.py"], check=True, capture_output=True, text=True)
+    #output = result.stdout
+    #powercap = re.search(r'Optimal Power Cap: (\d+)W', output).group(1)
+    #print(f"Power Cap: {powercap}")
+
+    #powercaps = [int(powercap), -1]
+    #plot_comparative_metrics_powercaps({"measurements": all_data}, output_dir, powercaps)
+    
+    #plot_gps_up_powercaps(all_data, output_dir, powercaps)
+
+    #plot_gps_up(all_data['measurements'], output_dir)
+
+    # Exercício 7
+    plot_energy_consumption(all_data, output_dir, "measurements")
+    plot_runtime(all_data, output_dir, "measurements")
