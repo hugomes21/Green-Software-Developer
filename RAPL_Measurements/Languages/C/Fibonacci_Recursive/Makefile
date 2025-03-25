@@ -7,6 +7,12 @@ compile_O0:
 compile_O2:
 	/usr/bin/gcc -O2 fibR.c -o fibonacci_recursive_O2_$(size)
 
+exec_O0:
+	./fibonacci_recursive_O0_$(size) $(size)
+
+exec_O2:
+	./fibonacci_recursive_O2_$(size) $(size)
+
 measure_O0:
 	sudo modprobe msr
 	sudo ../../../RAPL/main "./fibonacci_recursive_O0_$(size) $(size)" C fibonacci_recursive_O0_$(size) $(NTIMES)
