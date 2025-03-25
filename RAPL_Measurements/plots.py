@@ -6,10 +6,22 @@ import subprocess
 import re
 
 def open_read_csv(file_path):
-    with open(file_path, 'r') as file:
-        reader = csv.DictReader(file)
-        data = [{key.strip(): value.strip() for key, value in row.items()} for row in reader]
-    return data
+    try:
+        with open(file_path, 'r', encoding='utf-8') as file:
+            reader = csv.DictReader(file)
+            data = [{key.strip(): value.strip() for key, value in row.items()} for row in reader]
+
+            # Verifica se os dados foram lidos corretamente
+            if not data:
+                print(f"Aviso: O ficheiro {file_path} está vazio ou não foi lido corretamente.")
+            else:
+                print(f"Sucesso: {len(data)} linhas lidas de {file_path}.")
+            return data
+
+    except Exception as e:
+        print(f"Erro ao ler {file_path}: {e}")
+        return []
+
 
 def plot_multiple_metrics(data, output_dir, title, metrics, ylabel):
     if not data:
@@ -299,7 +311,7 @@ def plot_gps_up_powercaps(data, output_dir, powercaps):
                 plt.savefig(f'{output_dir}/{program}_{metric}_gps_up_quadrant_powercap_{powercap}.png')
                 plt.close()
 
-
+# Exercício 1.7.
 def plot_energy_consumption(data, output_dir, title):
     if not data:
         print(f"No data found for {title}")
@@ -374,12 +386,170 @@ def plot_runtime(data, output_dir, title):
     plt.savefig(f'{output_dir}/{title}_runtime.png')
     plt.close()
 
+# Exercício 2.4.
+def compare_energy_consumption(rapl_file, codecarbon_files, output_dir):
+    rapl_data = open_read_csv(rapl_file)
+    codecarbon_data = []
+    for file in codecarbon_files:
+        codecarbon_data.extend(open_read_csv(file))
+
+    if not rapl_data or not codecarbon_data:
+        print("Erro: Dados insuficientes para comparação.")
+        return
+
+    programs = ['fibonacci_linear', 'fibonacci_recursive']
+    for program in programs:
+        # Filtrar dados do RAPL
+        rapl_filtered = [
+            row for row in rapl_data
+            if program in row['Program'].lower()
+        ]
+
+        # Filtrar dados do CodeCarbon
+        codecarbon_filtered = [
+            row for row in codecarbon_data
+            if row['Program'].lower() == program
+        ]
+
+        if not rapl_filtered:
+            print(f"Erro: Dados insuficientes para {program} no RAPL. Pulando...")
+            continue
+
+        if not codecarbon_filtered:
+            print(f"Erro: Dados insuficientes para {program} no CodeCarbon. Pulando...")
+            continue
+
+        # Calcular médias para RAPL
+        rapl_O0 = [float(row['Package']) for row in rapl_filtered if '_O0_' in row['Program']]
+        rapl_O2 = [float(row['Package']) for row in rapl_filtered if '_O2_' in row['Program']]
+        avg_rapl_O0 = sum(rapl_O0) / len(rapl_O0) if rapl_O0 else 0
+        avg_rapl_O2 = sum(rapl_O2) / len(rapl_O2) if rapl_O2 else 0
+
+        # Converter energy_consumed de kWh para Joules no CodeCarbon
+        codecarbon_O0 = [
+            float(row['energy_consumed']) * 3.6e6
+            for row in codecarbon_filtered
+            if row['Optimization'] == 'O0'
+        ]
+        codecarbon_O2 = [
+            float(row['energy_consumed']) * 3.6e6
+            for row in codecarbon_filtered
+            if row['Optimization'] == 'O2'
+        ]
+        avg_codecarbon_O0 = sum(codecarbon_O0) / len(codecarbon_O0) if codecarbon_O0 else 0
+        avg_codecarbon_O2 = sum(codecarbon_O2) / len(codecarbon_O2) if codecarbon_O2 else 0
+
+        # Criar gráfico comparativo
+        plt.figure(figsize=(10, 6))
+        labels = ['O0', 'O2']
+        rapl_values = [avg_rapl_O0, avg_rapl_O2]
+        codecarbon_values = [avg_codecarbon_O0, avg_codecarbon_O2]
+
+        x = np.arange(len(labels))
+        width = 0.35
+
+        bars_rapl = plt.bar(x - width/2, rapl_values, width, label='RAPL', color='blue', edgecolor='black')
+        bars_codecarbon = plt.bar(x + width/2, codecarbon_values, width, label='CodeCarbon', color='green', edgecolor='black')
+
+        # Adicionar valores no topo das barras
+        for bar in bars_rapl:
+            plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f'{bar.get_height():.2f}', ha='center', va='bottom')
+        for bar in bars_codecarbon:
+            plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f'{bar.get_height():.2f}', ha='center', va='bottom')
+
+        plt.xlabel('Optimization Level')
+        plt.ylabel('Energy Consumption (Joules)')
+        plt.title(f"Energy Consumption Comparison - {program}")
+        plt.xticks(x, labels)
+        plt.legend()
+        plt.grid(axis='y', linestyle='--', alpha=0.7)
+        plt.tight_layout()
+
+        os.makedirs(output_dir, exist_ok=True)
+        plt.savefig(f"{output_dir}/{program}_energy_comparison.png")
+        plt.close()
+
+def compare_runtime(rapl_file, codecarbon_files, output_dir):
+    rapl_data = open_read_csv(rapl_file)
+    codecarbon_data = []
+    for file in codecarbon_files:
+        codecarbon_data.extend(open_read_csv(file))
+
+    if not rapl_data or not codecarbon_data:
+        print("Erro: Dados insuficientes para comparação.")
+        return
+
+    programs = ['fibonacci_linear', 'fibonacci_recursive']
+    for program in programs:
+        # Filtrar dados do RAPL
+        rapl_filtered = [
+            row for row in rapl_data
+            if program in row['Program'].lower()
+        ]
+
+        # Filtrar dados do CodeCarbon
+        codecarbon_filtered = [
+            row for row in codecarbon_data
+            if row['Program'].lower() == program
+        ]
+
+        if not rapl_filtered:
+            print(f"Erro: Dados insuficientes para {program} no RAPL. Pulando...")
+            continue
+
+        if not codecarbon_filtered:
+            print(f"Erro: Dados insuficientes para {program} no CodeCarbon. Pulando...")
+            continue
+
+        # Calcular médias para RAPL
+        rapl_O0 = [float(row['Time (ms)']) for row in rapl_filtered if '_O0_' in row['Program']]
+        rapl_O2 = [float(row['Time (ms)']) for row in rapl_filtered if '_O2_' in row['Program']]
+        avg_rapl_O0 = sum(rapl_O0) / len(rapl_O0) if rapl_O0 else 0
+        avg_rapl_O2 = sum(rapl_O2) / len(rapl_O2) if rapl_O2 else 0
+
+        # Converter duration de segundos para milissegundos no CodeCarbon
+        codecarbon_O0 = [float(row['duration']) * 1000 for row in codecarbon_filtered if row['Optimization'] == 'O0']
+        codecarbon_O2 = [float(row['duration']) * 1000 for row in codecarbon_filtered if row['Optimization'] == 'O2']
+        avg_codecarbon_O0 = sum(codecarbon_O0) / len(codecarbon_O0) if codecarbon_O0 else 0
+        avg_codecarbon_O2 = sum(codecarbon_O2) / len(codecarbon_O2) if codecarbon_O2 else 0
+
+        # Criar gráfico comparativo
+        plt.figure(figsize=(10, 6))
+        labels = ['O0', 'O2']
+        rapl_values = [avg_rapl_O0, avg_rapl_O2]
+        codecarbon_values = [avg_codecarbon_O0, avg_codecarbon_O2]
+
+        x = np.arange(len(labels))
+        width = 0.35
+
+        bars_rapl = plt.bar(x - width/2, rapl_values, width, label='RAPL', color='blue', edgecolor='black')
+        bars_codecarbon = plt.bar(x + width/2, codecarbon_values, width, label='CodeCarbon', color='green', edgecolor='black')
+
+        # Adicionar valores no topo das barras
+        for bar in bars_rapl:
+            plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f'{bar.get_height():.2f}', ha='center', va='bottom')
+        for bar in bars_codecarbon:
+            plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f'{bar.get_height():.2f}', ha='center', va='bottom')
+
+        plt.xlabel('Optimization Level')
+        plt.ylabel('Runtime (ms)')
+        plt.title(f"Runtime Comparison - {program}")
+        plt.xticks(x, labels)
+        plt.legend()
+        plt.grid(axis='y', linestyle='--', alpha=0.7)
+        plt.tight_layout()
+
+        os.makedirs(output_dir, exist_ok=True)
+        plt.savefig(f"{output_dir}/{program}_runtime_comparison.png")
+        plt.close()
 
 if __name__ == "__main__":
     output_dir = os.path.join(os.getcwd(), 'Plots')
-    all_data = open_read_csv("./CSV/measurements_ex6.csv")
+    rapl_files = "./CSV/measurements.csv"
+    codecarbon_files = ["./CSV/emissions_Fibonacci_Linear.csv", "./CSV/emissions_Fibonacci_Recursive.csv"]
+    # all_data = open_read_csv("./CSV/measurements_ex6.csv")
     #all_data = open_read_csv("./CSV/measurements_compare.csv")
-    #all_data = open_read_csv("./CSV/measurements_PowerCap.csv")
+    #all_data = open_read_csv("./CSV/measurements_PowerCap.csv"F
     #all_data = collect_data_from_directories("measurements.csv")
     
     variables = {
@@ -409,6 +579,10 @@ if __name__ == "__main__":
 
     #plot_gps_up(all_data['measurements'], output_dir)
 
-    # Exercício 7
-    plot_energy_consumption(all_data, output_dir, "measurements")
-    plot_runtime(all_data, output_dir, "measurements")
+    # Exercício 1.7.
+    #plot_energy_consumption(all_data, output_dir, "measurements")
+    #plot_runtime(all_data, output_dir, "measurements")
+
+    # Exercício 2.4.
+    compare_energy_consumption(rapl_files, codecarbon_files, output_dir)
+    compare_runtime(rapl_files, codecarbon_files, output_dir)
